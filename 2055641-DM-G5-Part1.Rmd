@@ -1,0 +1,148 @@
+---
+title: "parta1-SQLDDL"
+author: "Joanna Jiang"
+date: "11/25/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,attr.source='.numberLines', eval = FALSE)
+library(RSQLite)
+connection <- RSQLite::dbConnect(RSQLite::SQLite(),"olist.db")
+```
+
+```{sql}
+-- hotels
+DROP TABLE IF EXISTS 'hotels';
+CREATE TABLE 'hotels' (
+  'hotel_id' INT PRIMARY KEY, 
+  'hotel_name' TEXT NOT NULL,
+  'street_name' TEXT NOT NULL,
+  'street_num' INT NOT NULL,
+  'city' TEXT NOT NULL,
+  'state' TEXT NOT NULL,
+  'post_code' TEXT NOT NULL,
+  'homepage_URL' TEXT NOT NULL,
+  'phone_num' TEXT NOT NULL
+) ; 
+
+-- channels
+DROP TABLE IF EXISTS 'channels';
+CREATE TABLE 'channels' (
+  'channel_id' INT PRIMARY KEY, 
+  'channel_name' TEXT NOT NULL,
+  'channel_URL' INT NOT NULL,
+  'referral_rate' DOUBLE NOT NULL
+) ; 
+
+-- rooms
+DROP TABLE IF EXISTS 'rooms';
+CREATE TABLE 'rooms' (
+  'room_id' INT PRIMARY KEY, 
+  'room_identifier' TEXT NOT NULL,
+  'hotel_id' TEXT NOT NULL,
+  'floor' INT NOT NULL,
+  'bed_num' INT NOT NULL,
+  'is_smoking_allowed' TEXT NOT NULL,
+  'available_date' TEXT NOT NULL,
+  'available_channel' TEXT NOT NULL,
+  'price' double NOT NULL,
+  FOREIGN KEY (hotel_id) REFERENCES hotels (hotel_id)
+) ; 
+
+-- guests
+DROP TABLE IF EXISTS 'guests';
+CREATE TABLE 'guests' (
+  'guest_id' INT PRIMARY KEY, 
+  'guest_first_name' TEXT NOT NULL,
+  'guest_middle_name' TEXT,
+  'guest_last_name' TEXT NOT NULL,
+  'country_from' TEXT NOT NULL,
+  'guest_email_address' TEXT,
+  'home_phone_num' TEXT,
+  'work_phone_num' TEXT,
+  'cell_phone_num' TEXT
+) ; 
+
+-- reservations
+DROP TABLE IF EXISTS 'reservations';
+CREATE TABLE 'reservations' (
+  'reservation_id' INT PRIMARY KEY, 
+  'guest_id' INT NOT NULL,
+  'room_id' INT NOT NULL,
+  'booking_date' DATE NOT NULL,
+  'arrival_date' DATE NOT NULL,
+  'departure_date' TEXT NOT NULL,
+  'floor_demand' INT,
+  'bed_demand' INT,
+  'smoking_demand' INT,
+  'credit_card_num' VARCHAR(16),
+  'channel_id' INT NOT NULL,
+  FOREIGN KEY(guest_id)
+    REFERENCES guests(guest_id),
+  FOREIGN KEY(room_id)
+    REFERENCES rooms(room_id),
+  FOREIGN KEY(channel_id)
+    REFERENCES channels(channel_id)
+) ; 
+
+-- historical_info
+DROP TABLE IF EXISTS 'historical_info';
+CREATE TABLE 'historical_info' (
+  'historical_id' INT PRIMARY KEY, 
+  'reservation_id' INT NOT NULL,
+  'reservation_state' TEXT NOT NULL,
+  'guest_id' INT NOT NULL,
+  'room_id' INT NOT NULL,
+  'booking_date' DATE NOT NULL,
+  'arrival_date' DATE NOT NULL,
+  'departure_date' DATE NOT NULL,
+  'credit_card_num' VARCHAR(16),
+  'channel_id' INT NOT NULL
+) ; 
+
+-- payment_methods
+DROP TABLE IF EXISTS 'payment_methods';
+CREATE TABLE 'payment_methods' (
+  'credit_card_num' VARCHAR(16) PRIMARY KEY, 
+  'card_type' TEXT NOT NULL,
+  'expiration_date' DATE NOT NULL,
+  'guest_id' INT NOT NULL,
+  FOREIGN KEY(guest_id)
+    REFERENCES guests(guest_id)
+) ; 
+
+-- orders_and_payments
+DROP TABLE IF EXISTS 'orders_and_payments';
+CREATE TABLE 'orders_and_payments' (
+  'invoice_id' INT PRIMARY KEY, 
+  'historical_id' INT NOT NULL,
+  'description' TEXT NOT NULL,
+  'amount' DOUBLE NOT NULL,
+  'credit_card_num' VARCHAR(16) NOT NULL,
+  FOREIGN KEY(historical_id)
+    REFERENCES historical_info(historical_id),
+  FOREIGN KEY(credit_card_num)
+    REFERENCES reservations(credit_card_num)
+) ; 
+
+-- available_date_in_channel
+DROP TABLE IF EXISTS 'available_date_in_channel';
+CREATE TABLE 'available_date_in_channel' (
+  'available_id' INT PRIMARY KEY, 
+  'date' DATE NOT NULL,
+  'channel_id' INT NOT NULL,
+  'room_id' INT NOT NULL,
+  FOREIGN KEY(channel_id)
+    REFERENCES channels(channel_id),
+  FOREIGN KEY(room_id)
+    REFERENCES rooms(room_id)
+) ; 
+
+-- create a trigger for storing reservation message in historical information
+CREATE TRIGGER stored_history_after_reserve
+  AFTER INSERT ON reservations
+BEGIN
+  INSERT INTO historical_info(reservation_id, guest_id, arrival_date, departure_date, booking_date, credit_card_num, channel_id, room_id, )
+```
+

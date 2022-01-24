@@ -1,0 +1,98 @@
+---
+title: "DataManagement-Group Assignment-Part B"
+author: "Group 5"
+date: "11/23/2021"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE,warning=FALSE,message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readxl) #for read_excel()
+library(data.table) #for like()
+```
+
+```{r checking the format of unbalanced panel data, warning=FALSE}
+#Since the data is unbalanced panel format, each country would have different data of year or different rows number. 
+#By default, this .Rmd file should place at the same level of directory as where "partB_data_files" is.
+
+file_list0 <- list.files(path="partB_data_files/") #list 38 names of countries in the "partB_data_files" folder 
+information <- data.frame() #create a empty data frame to store information
+
+for (j in 1:length(file_list0)){ #start a loop j
+  file_list1 <- list.files(path=paste("./partB_data_files/",file_list0[j],sep = ""),pattern=".xlsx") #list 5 names of excel files in each country folder 
+
+  for (i in 1:length(file_list1)){ #start another loop i within each loop j
+    this_filepath <- paste0("./partB_data_files/",file_list0[j],"/",file_list1[i],sep = "") #create a file path for each excel file in each country 
+    suppressMessages(temp_data <- read_excel(this_filepath, col_names=FALSE,skip=1)) #read each excel file with skipping the first row     and store it in "temp_data"
+    
+    number_of_rows <- nrow(temp_data) #count the number of rows
+    number_of_columns <- ncol(temp_data) #count the number of columns
+
+    infor<-paste0(file_list0[j],"/", file_list1[i], "/", number_of_rows, "/",number_of_columns) #make a sentence describing each excel file in each country with the number of rows and columns
+    information <- rbind(information, infor) #bind the "infor" data to the "information" dataset for each iteration
+  }
+}
+colnames(information)<-c("title") #rename the column of information
+information<-separate(information, title, into = c("Country", "file_name","number_of_rows","number_of_columns"), sep = "/") #separate the individual column into 4 columns which are "Country", "file_name","number_of_rows" and "number_of_columns"
+unique(information$number_of_rows) #provide unique number of rows for the whole "information" dataset
+unique(information$number_of_columns) #provide unique number of columns for the whole "information" dataset
+
+#Conclusion: The excel files in our folders contain 52 or 63 rows, and 67 columns. (The reading of each file skips the first row.) 
+```
+
+
+```{r importing data, warning=FALSE}
+
+file_list0 <- list.files(path="partB_data_files/") #list 38 names of countries in the "partB_data_files" folder 
+dataset <- data.frame() #create a empty data frame to store dataset
+
+for (j in 1:length(file_list0)){ #start a loop j
+   file_list1 <- list.files(path=paste("./partB_data_files/",file_list0[j],sep = ""),pattern=".xlsx") #list 5 names of excel files in each country folder 
+
+  for (i in 1:length(file_list1)){ #start another loop i within each loop j
+    this_filepath <- paste0("./partB_data_files/",file_list0[j],"/",file_list1[i],sep = "") #create a file path for each excel file in each country 
+    suppressMessages(temp_data <- read_excel(this_filepath, col_names=FALSE,skip=1)) #read each excel file with skipping the first row     and store it in "temp_data", and by default, read_excel ensure column names are not empty and are unique
+    
+    temp_data<-temp_data[!(temp_data[,1]=="Time"|temp_data[,1]=="Unit"|temp_data[,1]=="Legend:"|temp_data[,1]=="x:"|temp_data$...1 %like% "Data extracted"), ] #remove the row of "Time", "Unit", "Legend:", "x:" and the one starts with "Data extracted" in "temp_data"
+    temp_data[,2]<-NULL #remove the second column which is an empty column
+    
+    suppressMessages(temp_data<-as_tibble(t(temp_data),.name_repair = "universal")) #transpose the row and column and make the result in tibble format, .name_repair = "universal" makes sure the column names are unique and syntactic
+    
+    temp_data<-replace_na(temp_data,list(...1=temp_data[1,1],...2=temp_data[2,2],...3=temp_data[2,3])) #replace the NA value with value of (1,1) cell in the first column(...1), the NA value with value of (2,2) cell in the second column(...2), the NA value with value of (2,3) cell in the third column(...3)
+    #(1,1) cell: whether it is OECD country or not; (2,2) cell: the flow; (2,3) cell: the country name
+    temp_data$...1<-unlist(temp_data$...1) #flatten the format of first column to a vector
+    temp_data$...2<-unlist(temp_data$...2) #flatten the format of second column to a vector
+    temp_data$...3<-unlist(temp_data$...3) #flatten the format of third column to a vector
+      
+    colnames(temp_data) <- as.character(unlist(temp_data[1,])) #copy the value of first row as the column names 
+    colnames(temp_data)[1]<-"OECD" #make the first column called "OECD"
+    temp_data = temp_data[-1, ] #remove the first row containing repeating header information
+      
+    temp_data<-pivot_longer(temp_data, -(1:4), names_to="year", values_to="value") #combine multiple columns (except the first four) into a single "year" column with a key-value pair format
+    temp_data$value[temp_data$value == ".."] <- NA #replace the ".." with NA in the "value" column
+     
+    dataset <- rbind(dataset, temp_data) #bind the new "temp_data" data to the building "dataset" for each iteration
+  }
+}
+dataset$value<-as.numeric(dataset$value) #change the format of "value" column in numeric data 
+
+```
+
+
+```{r result}
+dataset1<- select(dataset,Country,year,Flow,Product,value) #order the column in a targeted format
+names(dataset1)<-tolower(names(dataset1)) #make the column name in lower case
+dataset1
+
+summarise_all(dataset1,~sum(is.na(.x))) #double check how many NA values in each column of the "dataset1"
+nrow(na.omit(dataset1)) #count the total number of records on the "dataset1" with omitting rows have NA value
+#Since the original dataset contains ".." and "0" in the "value" column, we assume the ".." means NA or the data are not available to collect at the extraction date. Thus, the counting would omit any rows with NA value in "value" column for further analysis. 
+
+product_records<-group_by(na.omit(dataset1),country,year,product)%>% #make the operation in each country, year, and product group rather than the whole "dataset1"
+summarise(count=n()) #count the total number of records for each product across countries across years with omitting rows have NA value
+product_records
+
+```

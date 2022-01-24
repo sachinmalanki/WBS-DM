@@ -1,0 +1,124 @@
+---
+title: "DataManagement-Group Assignment-Part C"
+author: "Group 5"
+date: "23/11/2021"
+output: html_document
+---
+
+```{r Import Library, include= FALSE}
+#Clear the Environment before starting the R Markdown file
+rm(list=ls())
+#install.packages("rvest")
+#install.packages("XML")
+#install.packages("xml2")
+#install.packages("tidyverse")
+library(xml2)
+#To get data from unstructured source 
+library(rvest)
+library(XML)
+library(dplyr)
+library(tidyverse)
+library(tibble)
+```
+
+
+```{r Web Scrapping ,warning=FALSE,eval=FALSE}
+api_url <- "https://www.food.gov.uk/uk-food-hygiene-rating-data-api"
+
+#Read the given URL using read_html
+html_data <- read_html(api_url)
+#Inside html tags get the list of all tags with href in the main URL page
+html_data %>% html_nodes('p a') %>% html_attr('href') -> xml_dataset
+xml_dataset <- xml_dataset[2]
+
+#Go to the dataset URL from the main page 
+html_downloaded_data <- read_html(xml_dataset)
+
+#Get all html tags with href attributes and convert it to vector
+html_downloaded_data %>% html_nodes('a') %>% html_attr('href') %>% as.vector() -> xml_url
+
+#Create a new directory to store xml files
+dir.create("PartCGroup5/OpenDataFiles/",showWarnings = FALSE)
+
+#Search the vector with only for strings with "OpenDataFiles" - Use grepl()
+xml_list <- xml_url[which(grepl('OpenDataFiles',xml_url))]
+
+#Removing Welch Data as the data is repeated
+xml_list <- (grep('en-GB.xml$',xml_list,value = TRUE))
+```
+
+```{r Looping through URL, warning=FALSE,eval=FALSE}
+#Compute overall time taken 
+startTime = Sys.time()
+
+#Iterate through all the cities(UK+Scotland) from the list of xml files using i as temporary variable
+for (i in xml_list){ 
+  #Download the xml to local drive
+  download.file(i,destfile = paste0("PartCGroup5/",gsub("http://ratings.food.gov.uk/","",i))) 
+}
+#Calculating the total time taken for downloading all xml files
+end_time <- Sys.time() - startTime
+end_time
+```
+
+```{r Read downloaded data,warning=FALSE,eval=FALSE}
+#Create a empty dataframe to store all the observations
+final <-data.frame()
+
+#Iterating through the downloaded files from local drive
+for (i in xml_list){
+  #Read the xml from the local drive
+  xData <-read_xml(paste0("PartCGroup5/",gsub("http://ratings.food.gov.uk/","",i)))
+  #Parse the xml 
+  doc <- xmlParse(xData)
+  #Converting the xml to Dataframe to clean and stage the data
+  df <- xmlToDataFrame(nodes=getNodeSet(doc, "//EstablishmentDetail"))
+  #Bind all the rows from each city into a single data frame 
+  final <- bind_rows(final,df)
+}
+
+#Writing the final csv into local drive
+write_csv(final,"final.csv")
+```
+
+
+```{r Data Cleaning,warning=FALSE,eval=FALSE}
+#Cleaning the data 
+final$RatingValue <- gsub("AwaitingInspection","Awaiting Inspection", final$RatingValue)
+
+#Convert the Rating_Value and Scheme Type as factors
+final$SchemeType <- as.factor(final$SchemeType)
+final$RatingValue <- as.factor(final$RatingValue)
+
+#Seperating Geocode into two columns Longitude and Latitude
+final <- separate(final, Geocode, into = c("Longitude", "Latitude"), sep = 17, remove = FALSE)
+
+#After separating geocode, making the original Geocode as NULL
+final$Geocode <- NULL
+#As all the entries are empty, making Right to Reply Column as NULL
+final$RightToReply <- NULL
+
+#Making data ready for Dashboard
+final <- final %>% relocate("AddressLine1", .after = "BusinessTypeID") %>% relocate("Longitude", .after = "BusinessTypeID") %>% relocate("Latitude", .after = "Longitude")
+
+```
+
+```{r Data Cleaning for Plotting, warning=FALSE}
+#Convert the main dataframe into two seperate dataframe - one for Scotland and one for others because Scotland has different rating compared to others
+#1	Pass and Eat Safe
+#2	Pass
+#3	Improvement Required
+#4	Awaiting Publication
+#5	Awaiting Inspection
+final_Scot <- final %>% filter(final$SchemeType == "FHIS")
+#Just ratings 1,2,3,4,5
+final_others <- final %>% filter(final$SchemeType == "FHRS")
+
+#Rename FHRS to FHIS in Scotland dataset
+final_Scot <- plyr::rename(final_Scot,c("FHRSID" = "FHISID"))
+
+#write_csv(final,"final.csv")
+write.csv(final_others,"final_others.csv")
+write.csv(final_Scot,"final_Scot.csv")
+
+```
