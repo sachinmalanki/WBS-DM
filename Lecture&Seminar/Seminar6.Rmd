@@ -1,0 +1,453 @@
+---
+title: "Seminar 6 - Data Transforms, XML and Intro to Crawling"
+author: "Dr Nikolaos Korfiatis"
+date: "Week 6"
+output:
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+    number_sections: yes
+header-includes: \usepackage{hyperref}
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+rm(list=ls())
+library(dplyr)
+library(tidyr)
+library(rvest)
+library(ggplot2)
+```
+
+\newpage
+
+# Data Transformations 
+
+## Datasets 
+
+* We will expand on the datacamp provided datasets. 
+
+```{r datasets}
+nuke_df <- readRDS("datasets/nuke_wide_country.rds")
+```
+
+
+
+# Tidyr 
+
+* The tidyr package has useful functions that allow us to 
+normalize datasets that are not in the first normal form. 
+
+* This provides three basic requirements: Observations (tupples)
+are recorded in rows. Variables are positioned in columns and 
+values are positioned in cells. 
+
+## Pivot Longer 
+
+
+* Lets have a look on how the nukes dataset looks: 
+
+```{r nukeslist}
+head(nuke_df)
+```
+
+* This brings us to the first violation: Variables (cell values) have become column names 
+
+* At the moment we can see that the year is unique and can be used as our main 
+reference key for this dataframe. 
+
+* We can use the pivot_longer function to alleviate that. 
+
+```{r pivotnuke}
+nuke_df %>% 
+  # pivot_longer(`United States`:`North Korea`)
+  pivot_longer(-year)
+```
+
+* By default if we don't specify the column name for the country it will 
+be named 'name'
+
+* The same happens to the cell transformed column which is now called value.
+
+* We can use function arguments to achieve that
+
+```{r addcolumnnamespivot1}
+nuke_df %>% 
+  pivot_longer(-year, names_to = "country",values_to="bomb_count") 
+
+```
+
+* Problem still remains that we have NA values here 
+
+* First approach with the ifelse 
+
+```{r firstnarm}
+nuke_df %>% 
+  pivot_longer(-year, names_to = "country",values_to="bomb_count") -> nikos_df
+
+nikos_df$bomb_count <- ifelse(is.na(nikos_df$bomb_count),0,nikos_df$bomb_count)
+nikos_df
+```
+
+
+* We can achieve that outside the function using the replace_NA utility function 
+ 
+```{r addcolumnnamespivot}
+nuke_df %>% 
+  pivot_longer(-year, names_to = "country",values_to="bomb_count") %>% 
+  replace_na(list(bomb_count = 0))
+```
+
+* this kind of transformation allows us to feed it in a ggplot pipe 
+
+```{r plotscatter}
+nuke_df %>% 
+  # Now we pivot to longer format using two columns as 
+  # country and bomb count 
+  pivot_longer(-year, names_to = "country",values_to="bomb_count") %>% 
+  # replace the na with 0 . L is to denote integer for the R intepreter
+  replace_na(list(bomb_count = 0L)) %>%
+  # na.omit() %>%
+  # filter(bomb_count>5) %>%
+  # filter(country %in% c("United States","Russian Federation")) %>%
+  # filter(country %in% c("United Kingdom")) %>%
+  ggplot(.,aes(x=year,y=bomb_count,group=country,color=country))+geom_point()+geom_line()
+
+```
+
+
+* So far we have seen the -column for excluding a single column from the pivot 
+* What happens if we have many columns that we wish to keep intact and only pivot 
+specific data ? 
+
+* lets have a look at the billboard dataset 
+
+```{r billboard}
+billboard <- readRDS("datasets/billboard.rds")
+head(billboard)
+```
+
+```{r pivotlongbillboard}
+billboard %>% 
+  pivot_longer(-c(artist,track,date.entered),names_to="week",values_to="rank")
+```
+
+* here it makes sense to drop the NA values as after some weeks they disipate
+from the billboard 
+
+```{r billboardna}
+billboard %>% 
+  pivot_longer(-c(artist,track,date.entered),names_to="week",values_to="rank") %>% 
+  na.omit()
+```
+
+* lets say that we want to calculate how many weeks the artist/track was on the 
+billboard. 
+
+* Easy fix: convert the week to numeric 
+
+```{r billboardtotalweeks1}
+billboard %>% 
+  pivot_longer(-c(artist,track,date.entered),names_to="week",values_to="rank") %>% 
+  na.omit() %>% 
+  mutate(week = gsub("wk","",week)) %>%
+  mutate(week = as.integer(week))
+```
+
+* from this row repetition lets get the maximum value for the week  
+
+```{r billboardtotalweeks}
+billboard %>% 
+  pivot_longer(-c(artist,track,date.entered),names_to="week",values_to="rank") %>% 
+  na.omit() %>% 
+  mutate(week = gsub("wk","",week)) %>%
+  mutate(week = as.integer(week)) %>% 
+  group_by(artist,track,date.entered) %>% 
+  filter(week == max(week)) %>% 
+  rename(total_weeks = week,final_rank = rank) -> preprocessbillboard
+head(preprocessbillboard)
+```
+
+* Which artist has stayed more than 52 weeks in total on the billboard ? 
+
+```{r preproc}
+preprocessbillboard %>% 
+  group_by(artist) %>% 
+  summarise(total_weeks_active = sum(total_weeks)) %>% 
+  arrange(desc(total_weeks_active)) %>% 
+  filter(total_weeks_active > 54) %>%
+  # ggplot(aes(forcats::fct_reorder(artist,total_weeks_active),y=total_weeks_active))+geom_bar(stat="identity")+theme(axis.text.x = element_text(angle = 90))+xlab("Artist") + ylab("Total Weeks") + coord_flip() 
+  ggplot(aes(x=forcats::fct_reorder(artist,total_weeks_active),y=total_weeks_active))+geom_bar(stat="identity")+theme(axis.text.x = element_text(angle = 90))+xlab("Artist") + ylab("Total Weeks")+coord_flip()
+ 
+```
+
+```{r trackgroup}
+preprocessbillboard %>% 
+  group_by(track) %>% 
+  summarise(total_weeks_active = sum(total_weeks)) %>% 
+  arrange(desc(total_weeks_active)) %>% 
+  filter(total_weeks_active > 24) %>%
+  ggplot(aes(forcats::fct_reorder(track,total_weeks_active),y=total_weeks_active))+geom_bar(stat="identity")+theme(axis.text.x = element_text(angle = 90))+xlab("track") + ylab("Total Weeks") + coord_flip() 
+ 
+```
+
+
+
+
+* tip: use plotly to make your graphs more fancy 
+
+```{r plotly}
+library(plotly)
+preprocessbillboard %>% 
+  group_by(artist) %>% 
+  summarise(total_weeks_active = sum(total_weeks)) %>% 
+  arrange(desc(total_weeks_active)) %>% 
+  # filter(total_weeks_active > 52) %>% 
+  ggplot(aes(forcats::fct_reorder(artist,total_weeks_active),y=total_weeks_active))+geom_bar(stat="identity")+theme(axis.text.x = element_text(angle = 90))+xlab("Artist") + ylab("Total Weeks")+ coord_flip() -> fig 
+  ggplotly(fig)
+
+```
+
+
+
+## Pivot Wider 
+
+* The wider format now is very useful for expanding key-value data to 
+tables.  
+
+* Lets consider the fish_encounters dataset that comes together with the 
+package 
+
+```{r fishencounters}
+head(fish_encounters)
+# unique(fish_encounters$station)
+```
+
+* Expanding it will give us a wide structure
+
+```{r expand}
+fish_encounters %>% 
+  pivot_wider(names_from=station,values_from=seen,values_fill=0)
+```
+
+
+* Wide is useful when we have row values that can act as variables. Meaning they 
+are pretty consistent. 
+
+* Lets have a look at the table2 of the tidyr dataset 
+
+```{r wide2a}
+head(table2)
+```
+
+* We can see that we have tracking across type (cases/population) for every country. 
+* It is rather useful for having this expanded as the dimensions are consistent accross the 
+other functional dependencies. 
+
+```{r wide2}
+table2 %>% 
+  pivot_wider(names_from = type,values_from=count)
+```
+
+
+* Lets create the rate 
+
+```{r wide3}
+table2 %>% 
+  pivot_wider(names_from = type,values_from=count) %>%
+  mutate(rate = cases/population)
+```
+
+## Separate 
+
+* Separate is a verb that allows us to split multi-valued columns
+* It functions in a similar way with the text-to-columns function in excel with the exception that no column overide is performed. 
+* typical case with separate are delimited  columns
+
+* lets take the table3 dataset from the tidyr package 
+
+```{r table3}
+head(table3)
+```
+
+* The rate column contains cases per population 
+
+* We can split it with the separate function 
+
+```{r exampleseparate, eval=FALSE}
+table3 %>% 
+  separate(rate,into = c("cases","population"),sep = "/")
+```
+
+## Unite 
+
+* Unite is the opposite of spread and allows us to concatenate values 
+  without braking the pipe sequence. 
+  
+* Day concatenation is something that is good case for unite
+
+```{r incidenceunite}
+incidencereports <- readRDS("datasets/incidencereports.rds")
+head(incidencereports)
+
+```
+
+* We can reduce the dimensions by concatenating the days and months together 
+
+* This can be also achieved by a cbind operation, but we want to do it in unite 
+in order to not break up the pipe sequence. 
+
+```{r unitesq}
+incidencereports %>% 
+  unite(date,c(year,month,day),sep="/")
+```
+
+* Use the as.Date function to convert it to date 
+
+```{r unitesqdate}
+incidencereports %>% 
+  unite(date,c(year,month,day),sep="/") %>% 
+  mutate(date = as.Date(date))
+```
+
+
+# XML and JSON parsing  
+
+```{r xmljson, message=FALSE}
+library(XML)
+library(rjson)
+```
+
+
+## Working with xml 
+
+* XML provides a standard to work with semi-structured data. 
+
+* When reading semistructured data the process is called ``parsing`` 
+
+* Lets take an example with a small dataset (datasets/books.xml) 
+
+```{r booksxml}
+# use the xmlToList function to work with that
+books <- XML::xmlToList("datasets/books.xml")
+```
+
+* Lets have a look on how the file looks: 
+
+```{r viewbooks}
+books[[1]]
+```
+
+
+* Lets now convert it to a dataframe. This process is called serialization
+* We can easily do that using the xmlToDataFrame function
+
+```{r serializebooks}
+books_df <- XML::xmlToDataFrame("datasets/books.xml")
+
+```
+
+* See the contents 
+
+```{r booksdfhead}
+head(books_df)
+```
+
+## Working with JSON and APIs 
+
+* Json data are provided as results to API calls 
+
+* You can easily interface with them as you would do in any webpage 
+
+```{r jsonapi}
+api_url <- "http://api.worldbank.org/v2/countries/USA/indicators/NY.GDP.MKTP.CD?per_page=5000&format=json"
+
+#download the file 
+download.file(api_url,destfile = "datasets/nygdp.json")
+
+```
+
+* We can read it using the readjson function 
+
+```{r readjson}
+json_data_nygdp <- jsonlite::read_json("datasets/nygdp.json",simplifyVector = TRUE)
+```
+
+```{r readdfjson }
+json_data_df <- as.data.frame(json_data_nygdp[[2]])
+```
+
+
+
+## The goverment chargepoints dataset 
+
+* the whole dataset in xml contains list of chargepoints interfacing UK 
+goverment 
+
+* URL: https://data.gov.uk/dataset/1ce239a6-d720-4305-ab52-17793fedfac3/national-charge-point-registry
+
+* Download files 
+
+```{r downloadfile, eval=FALSE}
+download.file("http://chargepoints.dft.gov.uk/api/retrieve/registry/",
+              destfile="datasets/chargepoints.xml")
+```
+
+## The XML package 
+
+* We can serialize the data using the XML package. 
+* Safer option is to use a list 
+
+```{r xmlpackage,eval=FALSE}
+library(XML)
+chargepoints <- xmlParse("datasets/chargepoints.xml")
+# this will take some time 
+chargepoints_serialize <- xmlToList(chargepoints)
+```
+
+* slow way 
+
+```{r dfreconstruct,eval=FALSE}
+all_charge_points <- data.frame()
+for(i in 1:length(chargepoints_serialize)){
+  this_row <- chargepoints_serialize[[i]] %>% t() %>% as.data.frame()
+  all_charge_points <- bind_rows(all_charge_points,this_row)
+}
+
+```
+
+
+
+# Intro to Crawling 
+
+## The rvest package 
+
+* For the upcoming weeks we will learn how to get data from unstructured sources 
+* For this we will use the rvest package 
+```{r rvest,results='asis'}
+library(rvest)
+gov_url <- "https://data.gov.uk/dataset/1ce239a6-d720-4305-ab52-17793fedfac3/national-charge-point-registry"
+gov_page <- read_html(gov_url)
+```
+
+```{r extractlinks}
+gov_page %>% 
+  html_nodes(".govuk-link") %>% 
+  html_attr("href") %>% 
+  as.vector() -> url_datasets
+
+url_datasets[which(grepl("dataset",url_datasets))]
+```
+
+
+```{r getallurls}
+print(paste0("https://data.gov.uk",url_datasets[which(grepl("dataset",url_datasets))]))
+```
+
+# Recommended Datacamp courses 
+
+* Reshaping data with Tidyr: https://learn.datacamp.com/courses/reshaping-data-with-tidyr
+
+* (For Next week) Working with Web data: https://learn.datacamp.com/courses/working-with-web-data-in-r

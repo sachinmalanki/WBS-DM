@@ -1,0 +1,392 @@
+---
+title: "Seminar 3 - SQLite Command Line, Database Creation"
+author: "Dr Nikolaos Korfiatis"
+date: "Week 3"
+output:
+  pdf_document:
+    toc: yes
+    number_sections: yes
+  word_document:
+    toc: yes
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,attr.source='.numberLines', eval = FALSE)
+```
+\newpage 
+
+# SQLite - Implementing a Logical Schema
+
+## SQL Parts 
+
+* **SQL DDL** 
+_the data definition part of the Structured Query Language_ 
+  * CREATE  
+  * DROP  
+  * ALTER 
+* **SQL DML** 
+_the data manipulation part of the Structured Query Language_ 
+  * INSERT
+  * UPDATE 
+  * DELETE 
+* **SQL DQL** 
+_the data query part of the Structured Query Language (often seen as part of the SQL DML)_
+  * SELECT 
+
+## The SQLite commmand line
+
+Using the terminal we can access the RDBMS directly
+
+```{bash, eval=FALSE}
+sqlite3
+```
+
+* Note that if no database is specified then a in-memory database will be created. 
+
+* If we specify a database however as in the example bellow: 
+
+```{bash, eval=FALSE}
+sqlite3 mydb.db 
+```
+
+* then a database called ``mydb.db`` will be created at the folder where 
+the sqlite3 command is executed or sqlite will connect to an existing database.
+
+* You can exid the terminal using the ``CTRL-D`` exit command (esc will not work)
+
+* if this database **allready exists** then SQLite will connect to it directly 
+(similar use as we do with the RSQLite package)
+
+## Connect and Setting options in the SQLite terminal
+
+* Let us connect to the ``olist.db`` database in the folder.
+```{bash, eval=FALSE}
+sqlite3 olist.db 
+```
+
+* Before we start we can set a few options on the sqlite command line 
+
+
+```{sql, eval=FALSE}
+.headers on 
+.mode column 
+```
+
+* Notice that the RDBMS specific commands (those outside SQL Syntax) start with a dot. 
+
+* You can get more information about them by typing ``.help``  
+
+
+## Usefull Commands 
+
+```{sql, eval=FALSE}
+.tables    -- show a list of tables  
+.schema    -- show the attributes 
+           -- of all tables in the RDBMS 
+.databases -- show the database that 
+           -- we are currently connected to
+.quit      -- exit the command line 
+           -- environment of the database (disconnect)
+.save      -- This can save the memory database to the filesystem
+```
+
+### Remember 
+
+These commands are RDBMS specific and differ per RDBMS. They are 
+only accessible when you interface with the RDBMS directly and not 
+through a standard driver (as they are not part of SQL spec).
+
+
+# Creating a new database and setting up the tables 
+
+## The task
+
+* Lets take the discount coupons database from the lecture 
+
+* After transfering the relational schema to logical we have the following 
+tables (underline denote primary key, double underline denote foreign key) 
+with the addition of some columns for illustration purposes: 
+
+  * **customers**($\underline{cust\_id}$,cust_name,cust_lastname)
+  * **items**($\underline{item\_id}$,$\underline{\underline{categ\_id}}$,$\underline{\underline{disc\_id}}$,item_desc)
+  * **category**($\underline{categ\_id}$,categ_desc)
+  * **discounts**($\underline{disc\_id}$,discount_desc)
+  * **customers_discounts** ($\underline{\underline{cust\_id},\underline{disc_id}}$)
+  
+## CREATE tables 
+
+* To create a table we use the CREATE TABLE statement 
+
+```{sql, eval=FALSE}
+CREATE TABLE 'my_table' (
+ 'field1' INT,  
+ 'field2' CHAR, 
+ 'field3' CHAR
+); 
+```
+
+* Note the ``CREATE TABLE`` statement is always followed by a table name. 
+* Table names need to be concise, contain no spaces or special characters. 
+* It is advisable to add the ``_`` character for complex names. E.g., ``my_table``
+
+## Anatomy of a create statement  
+
+* We begin and close a parenthesis allways
+* Table names anf fieldnames are surround by a string delimeter (either ' or " but 
+this needs to be consistent)
+* The statement ends with a semicolon after the closing parenthesis 
+* each field statement is separated by a comma 
+* each field type need to adhere to the general classes in SQLite (or 
+the compatible classes in other RDBMS)
+  * INT (or also smallint,bigint etc)
+  * TEXT(or also char,varchar)
+  * DATE/DATETIME 
+  etc 
+
+
+## DROP TABLE 
+* We can also drop (delete) the table from the database (warning this will delete 
+the table and the data together)
+
+```{sql, eval=FALSE}
+
+DROP TABLE my_table ;  
+
+```
+
+## Specifying the tables (Without the foreign key constraints)
+
+```{sql, eval=FALSE}
+-- Customers 
+CREATE TABLE 'customers' (
+  'cust_id' INT PRIMARY KEY, 
+  'cust_name' VARCHAR(250) NOT NULL,
+  'cust_lastname' VARCHAR(250) NOT NULL
+) ;  
+```
+```{sql, eval=FALSE}
+-- Category 
+-- You can add the IF NOT EXISTS in case you execute again
+CREATE TABLE 'category'(
+  'categ_id' INT PRIMARY KEY, 
+  'categ_name' VARCHAR(250) NOT NULL, 
+  'categ_desc' TEXT
+); 
+```
+
+### Discounts
+
+```{sql, eval=FALSE}
+-- Discounts 
+CREATE TABLE discounts(
+  'disc_id' INT PRIMARY KEY,
+  'disc_name' VARCHAR(50) NOT NULL, 
+  'disc_desc' TEXT
+);
+```
+
+## Specifying the tables (With Foreign Key Constraints)
+
+### items 
+```{sql, eval=FALSE}
+-- Items 
+CREATE TABLE 'items' ( 
+  'item_id' INT PRIMARY KEY, 
+  'categ_id' INT,
+  'item_name' VARCHAR(250) NOT NULL,
+  'item_desc' TEXT,
+  FOREIGN KEY ('categ_id') 
+    REFERENCES category ('categ_id')
+) ;  
+```
+
+### Customer Discounts Relation 
+```{sql, eval=FALSE}
+-- Customers Discounts 
+CREATE TABLE 'customers_discounts' (
+  'cust_id' INT, 
+  'disc_id' INT,
+  FOREIGN KEY('cust_id') 
+    REFERENCES customers('cust_id'), 
+  FOREIGN KEY ('disc_id') 
+    REFERENCES discounts('disc_id')
+);
+```
+
+## Alter 
+
+* Now lets say that I want to add something in addition to the items 
+table e.g. a price 
+
+```{sql, eval=FALSE}
+ALTER TABLE items 
+ADD price INT DEFAULT 0; 
+```
+
+
+
+## Adding/Changing columns: The ALTER statement
+
+* In the case we want to modify a table by adding an additional 
+ column (or columns) we make use of the ALTER statement 
+* This can be used with either ADD or MODIFY statements for the 
+ columns 
+
+
+```{sql, eval=FALSE}
+ALTER TABLE items 
+RENAME price TO items_price; 
+```
+
+## The SQLite Browser 
+
+### Note 
+All these commands can be done using a graphical interface 
+using the SQLite Browser 
+https://sqlitebrowser.org/
+
+
+## Pushing Data in: The INSERT INTO statement
+
+
+```{sql, eval=FALSE}
+INSERT INTO category(categ_id,categ_name,categ_desc) VALUES 
+(1,"electronics","Consumer Electronics");
+
+INSERT INTO  category(categ_id,categ_name,categ_desc) VALUES 
+(2,"games","Video Games");
+
+
+INSERT INTO  category(categ_id,categ_name,categ_desc) VALUES 
+(3,"appliances","Household Appliances");
+-- we can also specify which columns we want to add
+
+
+```
+
+* Check the case with constraints 
+
+## UPDATE SET WHERE Statement 
+
+```{sql, eval=FALSE}
+UPDATE category SET categ_name = "household" WHERE categ_id = 3 ; 
+```
+
+* We are going to revisit the WHERE statement on the 
+SELECT seminar (Week 4)
+
+## DELETE WHERE Statement 
+
+* If we want to revert an insert we can use the DELETE statement 
+
+```{sql, eval=FALSE}
+DELETE FROM category WHERE categ_id = 3 ; 
+```
+
+
+## How are tables backed up 
+
+
+### Database DUMP  
+A database dump is an sql file which contains the database schema, 
+that is all the CREATE statements for the tables and a long 
+series of INSERT statements for the data that are allready there.
+
+### Dumping in sqlite 
+
+
+
+
+
+### Note 
+
+Every RDBMS has a data folder, backing it up will back up the data 
+as well. However the previous solution enables transfer from one 
+RDBMS to another. 
+
+# Employability Challenge #3 
+
+## Description
+
+>In a hotel there are 8 floors with each floor containing 84 rooms apart from the last floor which has 89 rooms.  Each room has a door where the room number is inscribed. The first digit represents the floor and the next two digits in sequence is the room number with leading zeros for the single digit ones. So for room 1 in the first floor should be 101 etc. There are no rooms on the ground floor. The room number plate is composed of a sequence of individual digits. So to put the number in the door of room 101 we will need  three numerals: two for digit 1 and one for digit 0. You are making an order to your supplier (morehandles.co.uk) for buying the room numerals. Write an R script to calculate the following: 
+
+### Answer the following 
+* What are the quantities for each numeral that you should order and
+* What is the bill of materials for this job (total cost of numerals to be purchased) 
+
+# Solution 
+## Step 1 
+```{r employbchallenge,attr.source='.numberLines'}
+# Create an empty vector where each position is representing the total number  
+# of numerals to be purchased, position 10 maps 
+# to the quantity of 0 numerals 
+
+total_numerals <- rep(0,10) 
+```
+
+### Next steps 
+
+* We will populate a vector of all room labels 
+* For each of these labels we are going to split the label in the 
+constituent characters and count the digits (simple as that)
+
+## Step 2 
+```{r rooms,attr.source='.numberLines'}
+# Reconstruct an index of the rooms  
+all_rooms <- c() 
+
+# You can also use the rep to populate that - for is easier to understand
+for(roomfloor in 1:8){
+  # each floor has 84 rooms apart from 8th floor which has 89
+  if(roomfloor<8){
+    this_floor <- c(paste0(roomfloor,"0",1:9),paste0(roomfloor,10:84))
+  } else {
+    this_floor <- c(paste0(roomfloor,"0",1:9),paste0(roomfloor,10:89))
+  }
+  # add this floor to the all rooms register
+  # notice the use of the vector constructor function - c() 
+  # to concatenate vectors together
+  all_rooms <- c(all_rooms,this_floor)
+}
+```
+
+## Step 3 
+```{r loopthrough,attr.source='.numberLines'}
+for(room in all_rooms){
+  #get this room and then break the representation to a vector of 
+  #three chars - trick: use the strsplit with an empty delimiter
+  this_room_numerals <- strsplit(room,"")
+  # strsplit returns a list - so we use the first element 
+  # of the list 
+  for(numeral in this_room_numerals[[1]]){
+    if(as.numeric(numeral)>0){
+          total_numerals[as.numeric(numeral)] <- total_numerals[as.numeric(numeral)]+1
+    } else {
+      total_numerals[10] <- total_numerals[10]+1 
+    }
+    
+    # this is also a valid solution 
+    # if(numeral==0){
+    #   total_numerals[10] <- total_numerals[10] + 1 
+    # }
+    # else if(numeral==1){
+    #   total_numerals[1] <- total_numerals[1] + 1 
+    # }
+    # .. all the way to check up to digit 9 
+  }
+}
+```
+
+## Calculating all together
+
+```{r calculate, eval=FALSE, attr.source='.numberLines'}
+orders <- data.frame(numerals = c(1:9,0),quantities = total_numerals)
+orders$price <- c(rep(2.52,10)) 
+orders$cost <- orders$quantities*orders$price
+#new trick we can use the sprintf function to avoid concatenation 
+#check the documentation on how it works 
+print(sprintf("Total Numerals: %g",sum(orders$quantities)))
+print(sprintf("Total cost: %s GBP",format(sum(orders$cost),big.mark = ",")))
+```
+

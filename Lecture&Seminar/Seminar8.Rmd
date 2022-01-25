@@ -1,0 +1,281 @@
+---
+title: "Seminar 8 - Displaying Data with Dashboards"
+author: "Dr Nikolaos Korfiatis"
+date: "Week 8"
+
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+header-includes:
+    - \usepackage{hyperref}
+always_allow_html: true
+---
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Shiny 
+
+* Shiny is the dashboard component of R and is developed by RStudio as a viable
+container for displaying results and interacting with the user 
+
+* For this seminar we work with the ui.R and server.R files in this folder. 
+
+* To begin - go to File > New File > Shiny Web App
+
+## Structure of a shiny app
+
+A shiny app consists of two main vars: 
+
+* ui: Handling the interface and user interaction 
+* server: Handling the processing of the data on the environment
+
+For each of them we assign properties and relevant functions
+
+## The shinydashboard package 
+
+* It adds visual appealing using known frameworks such as Twitter Bootstrap 
+which allow for the quick design of dashboard visualizations
+
+* It consists of three parts 
+  * header (dashboardHeader())
+  * sidebar (dashboardSidebar())
+  * body (dashboardBody())
+* Note: All these need to be declared on the ui.R file.
+  
+# Declaring a basic dashboard 
+
+* We edit the ui.R file in order to create a new 
+dashboardPage and assign it to the ui component
+
+```{r dashboard, eval=FALSE}
+library(shinydashboard)
+
+ui <- dashboardPage(
+  dashboardHeader(title = "Basic dashboard"),
+  dashboardSidebar(),
+  dashboardBody()
+)
+```
+
+
+## Adding elements to the dashboard page 
+
+* Shinydashboard follows twitter bootstrap 
+
+* Every element is positioned in rows and columns using the 
+fluidRow() and column() functions. 
+
+* Elements of interest are provided in boxes using the box() function
+
+
+## Example: Creating our hello world 
+
+* Add a row with two boxes: One box has the world hello and the 
+other has the word World
+
+* To do that we need to split the row in two sections using the 
+column function. Our structure looks as follows: 
+
+
+```{r helloworld, eval=FALSE}
+fluidRow(
+  column(width = 6,
+         box(p("hello"))
+         ), 
+  column(width = 6, 
+         box(p("world"))
+  )
+)
+
+
+```
+
+## HTML tags and formating
+
+* Notice we use the p() function to display a paragraph. 
+This is the html equivalent of 
+```<p>Hello</p><p>World</p>```
+
+* The column functions allow us to position the boxes side by side 
+
+* We can change the p to h1(), h2(), h3() header functions. 
+
+
+## Adding structure on the sidebar 
+
+* We can beggin by adding a basic structure 
+* For this example we are going to use the diamonds dataset from 
+ggplot 
+* We want to have a page where we list the data and two additional 
+sections where we provide relevant visualizations 
+
+## Sidebar items 
+
+* Lets begin with the sidebar panel
+
+* We use the menuItem() function with the appropriate parameters 
+for label, reference to action and icon 
+
+```{r sidebarcontent, eval=FALSE}
+## Sidebar content
+  dashboardSidebar(
+       sidebarMenu(
+         menuItem("Data", tabName = "diamondsdata", icon = icon("dashboard")),
+         menuItem("Plots", tabName = "diamondsplots", icon = icon("th"))
+    )
+  )
+```
+
+
+## Adding actions for sidebar item 
+
+* We can now add separate action for each dashboard menu item on 
+the dashboardBody page 
+
+* Lets start with two empty pages 
+```{r dashboardbody, eval=FALSE}
+dashboardBody(
+    tabItems(
+      # First tab content
+      tabItem(tabName = "diamondsdata",
+        fluidRow(
+          h1("Dataset")
+        )
+         
+      ),
+
+      # Second tab content
+      tabItem(tabName = "diamondsplots",
+        h1("Plots")
+      )
+    )
+  )
+
+```
+
+# Displaying data using the DT package 
+
+```{r dtrender, eval=FALSE}
+# add this on the libraries start 
+library(DT)
+
+# lets add a fluidRow with the dataTableOutput 
+# function from DT package
+
+DT::dataTableOutput("diamondsdatatable")
+
+```
+
+## Connecting the datatable with the server.R 
+
+* Now that we have placed a component to be displayed lets modify the server.R 
+to do that 
+
+* Lets open server.R 
+
+* replace the contents of this file with the following: 
+
+```{r server,eval=FALSE}
+server <- function(input,output){
+    
+}
+```
+
+* Now we need to connect the component on the ui.R with the server.R functions 
+
+## DataTables rendering 
+
+* Remember that in the ui.R we have now added an output function with the parameter
+argument: ``diamondsdatatable``
+
+* To connect now, we have to use the output component from the server function and 
+use the renderDataTable() function to fill up the dataTableOutput() function. 
+
+* We can do this as follows: 
+```{r display, eval=FALSE}
+output$diamondsdatatable <- DT::renderDataTable(
+        diamonds
+    )
+```
+
+## Wrapping up 
+
+* We can also add the datatable within a column to make the interface more usable 
+
+```{r shinycolumn, eval=FALSE}
+fluidRow(
+          column(width = 12,
+                  DT::dataTableOutput("diamondsdatatable")
+          )
+)
+```
+
+
+# Displaying visuals 
+
+* We achieve that using the plotOutput function 
+* Note that this type of function evaluates an expression, meaning the that the server part will be as: 
+
+```{r renderplot, eval=FALSE}
+ output$pricehist <- renderPlot({
+        ggplot(diamonds, aes(y=price,x=carat))+geom_smooth()
+        }
+    )
+```
+
+* We can also use the plotly library to create a more interactive set of graphs
+
+```{r plotout, eval=FALSE}
+
+    output$pricehistplotly <- renderPlotly({
+        output <-  ggplot(diamonds, aes(y=price,x=carat))+geom_smooth()
+        ggplotly(output)
+      }
+    )
+```
+
+* Note that you need to modify the ``plotOutput`` to ``plotlyOutput``
+
+
+## Adding controls 
+
+* We can add a selectbox 
+
+```{r seelect, eval=FALSE}
+selectInput("diamondcut", label = h3("Select Cut"), 
+                                         choices = list("Fair" = "Fair", "Good"="Good", 
+                                                        "Very Good"="Very Good", 
+                                                        "Premium"="Premium", 
+                                                        "Ideal"="Ideal" 
+                                                        ), 
+                                         selected = "Ideal")
+```
+
+## Connecting the filter 
+```{r plotfilter, eval=FALSE}
+output$pricehistplotlywithfilter <- renderPlotly({
+        to_filter <- input$diamondcut
+        ploth <- ggplot(subset(diamonds,cut==to_filter),aes(x=price))+geom_histogram()
+        ggplotly(ploth)
+    })
+```
+
+
+
+## Finishing up and upload 
+
+* You can use the publish option to upload it to shinyapps.io 
+* Note: You need to create an account there and use the token to publish it 
+through Rstudio.
+
+
+
+# Datacamp course 
+
+* Building Dashboards with Shiny dashboard 
+
+https://learn.datacamp.com/courses/building-dashboards-with-shinydashboard

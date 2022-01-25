@@ -1,0 +1,172 @@
+---
+title: "Seminar 1 - Flat files, Data Structures and DB Interfaces"
+author: "Dr Nikolaos Korfiatis"
+date: "Week 1"
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview 
+The goal of this seminar is to familiarize you with: 
+
+* File system commands and flat files
+* Data reading  
+* Use of the DBI api from R to connect to SQLite 
+
+
+## File System commands 
+
+To learn more about the commands we are going to use see the related courses 
+from Datacamp on the category shell
+
+* The ls command - this command is just listing the files in the current working
+directory
+
+```{bash}
+ls
+```
+
+* To get help you can use the --help option 
+
+```{bash, comment=NA}
+ls --help
+```
+
+* The --help is a *flag*, it is used as an input to the command, in a similar way
+we may call a function in R with a named argument. There are several alternative 
+flags that we may want to utilize by running the ``ls --help`` command again 
+and seeing what is useful 
+
+* lets get a more detailed view of the ls commnand using the ``ls -l`` command
+
+```{bash}
+ls -l
+```
+
+* The defualt block size is 4096, total is counting the number of disk blocks. 
+
+* The letter ``d`` in front of the second line denotes that ``challenge`` is a folder.
+
+* We can use even more flags to accomplish what we want. For example let us see the size of theses files in a human readable way. By using the 
+
+
+
+```{bash, comment=NA}
+ls -lahsr
+```
+
+The ``list.files()`` function in R performs the same job and returns a vector.
+
+* Sequential peeking into a file  
+
+The head command 
+
+```{bash, comment=NA}
+cd challenge/
+head textfile.txt
+```
+
+* The cat command 
+
+```{bash}
+#go to the challenge folder
+cd challenge 
+#print out the contents of the text file 
+cat textfile.txt
+
+```
+
+We can also use the ``-n`` flag to show the line number 
+
+```{bash,comment=NA}
+#go to the challenge folder
+cd challenge 
+#print out the contents of the text file 
+cat -n textfile.txt
+
+```
+
+
+## Working with Flat files
+
+
+```{bash,comment=NA}
+cd challenge
+head data.csv
+```
+
+* We can use the pipe (|) symbol to channel the output of the cat command to another 
+command - ``wc``. This command counts the number of lines provided in the input and 
+provides an output. We can use the ``-l`` 
+
+
+```{bash,comment=NA}
+cd challenge
+# how many lines
+cat data.csv | wc -l
+
+```
+
+```{bash,comment=NA}
+#contents of specific lines using sed
+#let us just grab line number: 1,999,222
+cd challenge
+sed -n -e 1999222p data.csv
+
+```
+
+* We can also request multiple rows by adding the -e flag sequentially 
+
+```{bash,comment=NA}
+#contents of specific lines using sed
+#let us  grab line number: 1,999,222 and 
+#add line 1 which is the header row.
+cd challenge
+sed -n -e 1p -e 1999222p data.csv
+
+```
+
+## The RSQLite package
+
+```{r package,comment=NA}
+# install.packages("RSQLite")
+library(RSQLite)
+```
+
+Setting up the connection 
+
+```{r connection,eval=FALSE}
+#declare the connection to a file called test.db 
+#alternatively if you don't want the file to be created and reside in the memory 
+#you can use the ":memory:" option 
+
+#First we open the connection to the database called test.db 
+#if the database doesn't exist a file will be created
+dbconnection <- dbConnect(RSQLite::SQLite(), "test.db")
+
+#Lets see how many tables are there 
+dbListTables(dbconnection)
+
+#Let us write a table called mtcars 
+dbWriteTable(dbconnection, "mtcars", mtcars)
+
+#If an error message says that the table already exists we can 
+#add the overwrite or append option as follows: 
+# dbWriteTable(dbconnection, "mtcars", mtcars,overwrite=TRUE)
+
+
+#Do not forget - after we do anything we disconnect
+dbDisconnect(dbconnection)
+```
+
+
+
+
+
+

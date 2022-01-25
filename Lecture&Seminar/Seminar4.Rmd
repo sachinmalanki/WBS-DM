@@ -1,0 +1,439 @@
+---
+title: 'Seminar 4 - SQL SELECT and dplyr'
+author: "Dr Nikolaos Korfiatis"
+date: "Week 4"
+# output:
+#   beamer_presentation:
+#     theme: Boadilla
+#     colortheme: dolphin
+#     fonttheme: structurebold
+#     slide_level: 2
+# classoption: t
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+header-includes:
+    - \usepackage{hyperref}
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,comment=NA,attr.source='.numberLines')
+
+rm(list=ls())
+library(readr)
+library(RSQLite)
+library(dplyr)
+```
+
+\newpage
+
+# Dataset
+
+
+## The bibitor data 
+
+* The bibitor data are part of the hub for analytics education PWC developed 
+  interview case study / training 
+* They rely on two folders for this seminar: bibitor and bibitor2 
+
+
+## Loading the data in SQLite 
+
+* The case study considers how to load the data using SQLite browser
+* We are going to load the data using the methods taught in Seminar Week 2 
+
+
+```{r defineconnection}
+# we will use the name of this variable to 
+# set up sql output in the rmd file
+
+my_connection <- RSQLite::dbConnect(RSQLite::SQLite(),"bibitor.db")
+```
+
+* We are going to read the bibitor data as dataframes using the names of dataframes 
+as the SQL tables defined in the PWC case study 
+
+## Loading using ``read_csv`` and ``dbWriteTable()``
+
+```{r dataloading,message=FALSE,warning=FALSE}
+PurchasesDec <- readr::read_csv("bibitor/PurchasesFINAL12312016a.csv")
+BegInvDec <- readr::read_csv("bibitor/BegInvFINAL12312016a.csv")
+EndInvDec <- readr::read_csv("bibitor/EndInvFINAL12312016a.csv")
+
+# in a similar way we can read and load the other tables and give the names  
+# that are in the PWC data case study - see slide 9 from the uploaded pdf
+VendorInvoicesDec <- readr::read_csv("bibitor/InvoicePurchases12312016a.csv",show_col_types = FALSE)
+```
+
+## Write them to the database 
+```{r writebacktodb}
+RSQLite::dbWriteTable(my_connection,"PurchasesDec",PurchasesDec,overwrite=TRUE)
+RSQLite::dbWriteTable(my_connection,"BegInvDec",BegInvDec,overwrite=TRUE)
+RSQLite::dbWriteTable(my_connection,"EndInvDec",EndInvDec,overwrite=TRUE)
+RSQLite::dbWriteTable(my_connection,"VendorInvoicesDec",VendorInvoicesDec,overwrite=TRUE)
+
+```
+
+# SQL Select 
+
+
+## General Syntax 
+
+* The general syntax is as follows (``|`` denotes ``or``, ``[]`` denotes non 
+mandatory): 
+
+```{sql, eval=FALSE}
+SELECT colname|expresion [AS alias] 
+FROM tablename|other tables
+WHERE condition 
+GROUP BY colname
+HAVING condition
+ORDER BY colname [ASC|DESC]
+LIMIT [start]TotalRecords
+```
+
+## Examples 
+>tip: We can use the rmarkdown to connect directly to the SQLite without 
+having to go to the sqlite console
+
+
+### Selecting columns 
+
+* Get the VendorName
+```{sql connection=my_connection}
+SELECT VendorName
+FROM VendorInvoicesDec ;
+```
+
+
+
+* Get the VendorName and other columns
+
+```{sql connection=my_connection}
+SELECT VendorNumber, VendorName,Dollars 
+FROM VendorInvoicesDec ;
+```
+
+
+## The wildcard (``*``) expression 
+
+We can also select all columns using the star (*) or wildcard expression 
+
+
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+```
+
+
+## The WHERE statement 
+
+
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE VendorName = "MARTIGNETTI COMPANIES" 
+```
+
+
+
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE upper(VendorName) = upper("Martignetti COMPANIES") 
+```
+
+* Remember condition value is case sensitive 
+
+
+
+* Same with multiple columns 
+
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE VendorName="MARTIGNETTI COMPANIES" OR VendorName="BACARDI USA INC"
+```
+
+* What will happen if we use AND instead of OR when using the same column  ? 
+
+```{sql connection=my_connection}
+SELECT * FROM VendorInvoicesDec 
+WHERE VendorName="MARTIGNETTI COMPANIES" AND VendorName="BACARDI USA INC" 
+```
+
+
+* The IN operator 
+
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE VendorName IN("MARTIGNETTI COMPANIES","BACARDI USA INC") 
+```
+
+
+
+* Example with numbers 
+
+```{sql connection=my_connection}
+SELECT * FROM VendorInvoicesDec 
+WHERE PONumber >= 8150 
+```
+
+## WHERE using multiple conditions
+
+* Example with numbers 
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE PONumber >= 8150 AND PONumber < 8170 
+```
+
+* Same example using the between keyword 
+
+* Example with numbers , observe the difference in the record numbers returned 
+* Between uses the equal sing in addition
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE PONumber BETWEEN 8150 AND 8170
+```
+
+## Using the LIMIT  
+
+* The limit allows us to set limits of the recordset to be returned by the query
+planner. 
+* The syntax of LIMIT considers the start row and the extend of the rows to be 
+returned e.g., LIMIT 10 will return the first 10 rows. LiMIT 10,10 will return 
+the ten rows after row 10 etc. 
+
+
+```{sql connection=my_connection}
+SELECT * 
+FROM VendorInvoicesDec 
+LIMIT 5
+```
+
+* Largest invoice (order by clause)
+
+```{sql connection=my_connection}
+SELECT VendorName, Quantity
+FROM VendorInvoicesDec 
+ORDER BY Dollars DESC
+LIMIT 5 
+```
+
+
+## The DISTINCT condition 
+
+* The distinct condition considers the cases where we get unique instances 
+of the values in that column 
+* It always consider column names 
+
+```{sql connection=my_connection}
+SELECT DISTINCT VendorName FROM VendorInvoicesDec 
+```
+
+## Summarization Functions 
+
+Summarization functions in SQL are the following: 
+
+  * AVG – calculates the average of a set of values.
+  * COUNT – counts rows in a specified table or view.
+  * MIN – gets the minimum value in a set of values.
+  * MAX – gets the maximum value in a set of values.
+  * SUM – calculates the sum of values.
+
+
+## Summarization on the whole table 
+
+* Counting the number of rows in the table
+
+```{sql connection=my_connection}
+SELECT COUNT(*) 
+FROM VendorInvoicesDec;
+```
+
+using the AS to make the resulted column conform with the standards 
+
+```{sql connection=my_connection}
+SELECT COUNT(*) AS total_rows FROM VendorInvoicesDec;
+```
+
+
+* The number of distinct suppliers that we have represented 
+
+```{sql connection=my_connection}
+SELECT COUNT(DISTINCT VendorName) AS total_vendors
+FROM VendorInvoicesDec;
+```
+
+* The minimum value of an invoice 
+
+```{sql connection=my_connection}
+SELECT MIN(Dollars) AS min_value FROM VendorInvoicesDec;
+```
+
+* The minimum value of an invoice in euros, assuming 1 euro is 0.82 dollars 
+
+
+```{sql connection=my_connection}
+SELECT MIN(Dollars*0.86) AS min_value_euros FROM VendorInvoicesDec;
+```
+
+
+* The maximum value of an invoice 
+
+```{sql connection=my_connection}
+SELECT MAX(Dollars) AS max_value FROM VendorInvoicesDec;
+```
+
+* The total value of all invoices 
+
+```{sql connection=my_connection}
+SELECT SUM(Dollars) AS total_value 
+FROM VendorInvoicesDec;
+```
+
+## Summarisation and Grouping 
+
+* Very often as in the case of pivot tables we want breakdowns by a particular 
+category 
+
+* This is achieved with the GROUP BY statement followed by the column or columns 
+where we want the pivot table to be disected. 
+
+* Lets get the total payment per vendor 
+ - Expand the original
+ 
+```{sql connection=my_connection}
+SELECT SUM(Dollars) AS total_value 
+FROM VendorInvoicesDec 
+GROUP BY VendorName 
+```
+
+```{sql connection=my_connection}
+SELECT VendorName, SUM(Dollars) AS total_payment 
+FROM VendorInvoicesDec 
+GROUP BY VendorName 
+```
+
+* It will make more sense if we get the value in desc order instead of 
+an ascending 
+
+```{sql connection=my_connection}
+SELECT VendorName, SUM(Dollars) AS total_payment 
+FROM VendorInvoicesDec 
+GROUP BY VendorName 
+ORDER BY total_payment DESC
+```
+
+* We can also add the LIMIT 5 to get the top 5 vendors by costs of goods bought
+
+```{sql connection=my_connection}
+SELECT VendorName, SUM(Dollars) AS total_payment 
+FROM VendorInvoicesDec 
+GROUP BY VendorName 
+ORDER BY total_payment DESC 
+LIMIT 5;
+```
+
+
+* Instead of the LIMIT I can use the having to get the suppliers that have cost 
+of goods purchased more than 1 million
+
+```{sql connection=my_connection}
+SELECT  VendorName, SUM(Dollars) AS total_payment 
+FROM VendorInvoicesDec 
+GROUP BY VendorName 
+HAVING total_payment > 1000000
+ORDER BY total_payment DESC 
+```
+
+
+## Running the SQL directly to the database and bringing it to R 
+
+* We use the dbGetQuery method 
+
+```{r top5vendors}
+
+top_suppliers <- RSQLite::dbGetQuery(my_connection,"SELECT VendorName, 
+                                            SUM(Dollars) AS total_payment
+                                            FROM VendorInvoicesDec 
+                                            GROUP BY VendorName 
+                                            ORDER BY total_payment DESC")
+
+```
+
+```{r barplot}
+barplot(top_suppliers$total_payment)
+```
+
+
+
+```{r disconnection}
+RSQLite::dbDisconnect(my_connection)
+```
+
+
+
+# Dplyr 
+
+
+## An example of the previous query
+
+* SQL 
+
+```{sql, eval=FALSE}
+SELECT VendorName, SUM(Dollars) AS total_payment
+FROM VendorInvoicesDec 
+GROUP BY VendorName 
+ORDER BY total_payment DESC 
+LIMIT 5
+```
+
+
+* dplyr example
+
+```{r dplyr}
+VendorInvoicesDec %>%
+  group_by(VendorName) %>% 
+  summarise(total_payment = sum(Dollars)) %>% 
+  arrange(desc(total_payment)) %>% 
+  top_n(5)
+```
+## Working with another table : BegInvDec
+
+
+```{r bibitor}
+head(BegInvDec)
+```
+
+
+* The following fragment is the dplyr equivalent of the following sql command 
+```{sql, eval=FALSE}
+SELECT Price,PPrice, Price*0.82 AS price_euros,
+PPrice*0.82 AS purchase_price_euros
+FROM BegInvDec
+LIMIT 5
+```
+
+
+```{r dplyravg}
+
+BegInvDec %>%                    
+  select(Price,PPrice) %>%         
+  mutate(price_euros = Price*0.82,                       
+        purchase_price_euros = PPrice*0.82) 
+
+```
+
+# Recommended Data Camp courses for Practicing 
+
+* Introduction to SQL 
+https://learn.datacamp.com/courses/introduction-to-sql
+
+* Introduction to data manipulation with dplyr 
+https://learn.datacamp.com /courses/data-manipulation-with-dplyr

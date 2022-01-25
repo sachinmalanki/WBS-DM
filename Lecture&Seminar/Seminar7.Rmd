@@ -1,0 +1,245 @@
+---
+title: "Seminar 7 - Crawling Data"
+author: "Dr Nikolaos Korfiatis"
+date: "Week 7"
+output:
+  pdf_document:
+    toc: yes
+    number_sections: yes
+  word_document:
+    toc: yes
+header-includes: \usepackage{hyperref}
+always_allow_html: yes
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+rm(list=ls())
+library(dplyr)
+library(rvest)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+```
+
+\newpage
+
+
+# Pagination and Reviews 
+
+* We want to get the average rating and the number of reviews for all banks in trustpilot 
+
+* Lets fetch the following page 
+> https://uk.trustpilot.com/categories/bank
+
+
+```{r trustpilot}
+trustpilot_url <- "https://uk.trustpilot.com/categories/bank?page=1"
+```
+
+
+```{r readpagination}
+trustpilot_pages <- read_html(trustpilot_url)
+```
+
+* From this page we want to find the urls of all bank pages in trustpilot
+* We need to find the title of the bank the number of the reviews and the rating
+selector
+
+```{r names}
+trustpilot_pages %>% 
+  html_nodes(".styles_businessTitle__1IANo") %>% 
+  html_text() -> bank_names 
+
+bank_names
+
+```
+
+```{r ratings}
+trustpilot_pages %>% 
+  html_nodes(".styles_textRating__19_fv") %>% 
+  html_text() -> bank_reviews
+bank_reviews
+```
+
+
+```{r individualpageurls}
+trustpilot_pages %>% 
+  html_node(".styles_categoryBusinessListWrapper__2H2X5") %>% 
+  html_nodes(".link_internal__YpiJI") %>% 
+  html_attr('href') -> individual_urls
+individual_urls
+```
+
+* merge 
+
+```{r singlepage}
+all_banks_trustpilot <- tibble(
+  bank_name = bank_names, 
+  bank_review = bank_reviews,
+  individual_url = individual_urls
+)
+
+```
+
+
+* do some cleanup 
+
+```{r cleanup}
+library(tidyr)
+
+all_banks_trustpilot <- all_banks_trustpilot %>% 
+  tidyr::separate(bank_review, into=c("reviews","rating_score"),sep="·")
+```
+
+```{r review_count_rating}
+all_banks_trustpilot$rating_score <- gsub("TrustScore ","",all_banks_trustpilot$rating_score)
+all_banks_trustpilot$rating_score <- stringr::str_trim(all_banks_trustpilot$rating_score)
+# convert to numeric 
+all_banks_trustpilot$rating_score <- as.double(all_banks_trustpilot$rating_score)
+
+
+```
+
+* How do ratings look ? 
+
+```{r histplot}
+library(ggplot2)
+all_banks_trustpilot %>% 
+  ggplot(.,aes(x=rating_score))+geom_histogram()
+```
+
+* Do the same for the number of reviews
+
+```{r reviewcount}
+all_banks_trustpilot$reviews <- gsub("reviews","",all_banks_trustpilot$reviews)
+all_banks_trustpilot$reviews <- gsub(",","",all_banks_trustpilot$reviews)
+all_banks_trustpilot$reviews <- stringr::str_trim(all_banks_trustpilot$reviews)
+all_banks_trustpilot$reviews <- as.numeric(all_banks_trustpilot$reviews)
+```
+
+* Review count and rating 
+
+```{r ratingreviewcount}
+
+all_banks_trustpilot %>% 
+  ggplot(.,aes(x=reviews,y=rating_score))+geom_smooth()
+```
+* Why do we see review score stabilizing after a certain amount of reviews ? 
+
+# S&P and Russel Index  
+
+
+* the html_table() function allows us to extract the data that are in tabular 
+form avoiding for loops
+
+
+* get the companies on the russel index
+
+```{r getrusselindex}
+russel_index <- "https://en.wikipedia.org/wiki/Russell_1000_Index"
+read_html(russel_index) %>% 
+  html_table() %>% 
+  .[[3]] -> russel_index_companies 
+
+```
+
+* get the companies on the S&P index 
+
+```{r sandpindex}
+spindex <- "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+read_html(spindex) %>% 
+  html_table(fill = TRUE) %>% 
+  .[[1]] -> sp500_companies
+
+```
+
+
+* lets get an inner join of the companies that appear both at the russel index 
+and the S&P500
+
+```{r sprussel}
+# fix the column names so we have a common field 
+colnames(russel_index_companies) <- c("company","symbol")
+colnames(sp500_companies) <- tolower(colnames(sp500_companies))
+# remove also the spaces and dashes from the sp500 dataframe column names 
+colnames(sp500_companies) <- gsub(" ","_",colnames(sp500_companies))
+colnames(sp500_companies) <- gsub("-","_",colnames(sp500_companies))
+```
+
+```{r innerjoin}
+sp500_companies %>% 
+  inner_join(russel_index_companies)
+```
+
+
+
+```{r antijoin}
+#we can also do an anti join to get those in S&P 500 not in Russel 1000 
+sp500_companies %>% 
+  anti_join(russel_index_companies)
+```
+
+
+```{r keepall}
+sp500_companies %>% 
+  anti_join(russel_index_companies) %>% 
+  select(symbol,security,cik) 
+```
+
+
+```{r geturlsof10k}
+edgar_url <- "https://www.sec.gov/cgi-bin/browse-edgar?CIK=%s&type=10-k"
+
+tenK_urls <- data.frame()
+#lets do the first 6 
+for(i in 1:nrow(head(sp500_companies))){
+  # use the sprintf function instead of paste when we have long 
+  # strings 
+  url_to_fetch <- sprintf(edgar_url,sp500_companies$cik[i])
+  this_row <- tibble(
+    cik = sp500_companies$cik[i],
+    url_to_fetch = url_to_fetch
+  )
+  tenK_urls <- bind_rows(tenK_urls,this_row)
+  print(url_to_fetch)
+}
+
+```
+
+* The following should run locally 
+
+```{r navigate10kurls, eval=FALSE}
+#initialize a column of the most recent document to NA
+tenK_urls$document_url <- NA 
+
+for(r in 1:nrow(tenK_urls)){
+  print(paste("Fetching for CIK code:",tenK_urls$cik[r]))
+  this_page <- read_html(tenK_urls$url_to_fetch[r])
+  # from this page we want the first row of the table  
+  # which corresponds to the more recent 10k filing of the company
+  # using the selector we are now able to see that the .tableFile2 is the selector we 
+  # wish to use to access the page
+  this_page %>% 
+    html_node(".tableFile2") %>% 
+    html_nodes("tr") %>%
+    .[[2]] %>% 
+    html_node("a") %>% 
+    html_attr("href") -> document_url
+  
+  tenK_urls$document_url[r] <- document_url
+}
+```
+
+```{r fixdownload}
+# use the paste0 function to add the URL 
+tenK_urls$document_url <- paste0("https://www.sec.gov",tenK_urls$document_url)
+
+```
+
+```{r downloadfiles}
+tenK_urls$document_url
+```
+
+

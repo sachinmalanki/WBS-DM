@@ -1,0 +1,252 @@
+---
+title: "Seminar 2 - Tidy Imports, Loops and Loading Data in SQLite"
+author: "Dr Nikolaos Korfiatis"
+date: "Week 2"
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+---
+\newpage
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE,comment = NA)
+library(readr)
+```
+
+# Tidy Imports 
+
+* There are several cases where we are required to guess, and ``recast`` types of variables to correspond to the nature of the attributes that we are dealing with in a *data schema*. 
+
+>The term "schema" refers to the organization of data as a blueprint of how the database is constructed (divided into database tables in the case of relational databases)
+
+* Tidy imports dictate two things: preservation of the original format and 
+conversion from one format to the other *only once* ! 
+
+## Standard import  
+
+* By definition R is able to import delimited data in various forms and there are appropriate connectors here 
+
+## The Brazilian Olist data 
+
+* Olist is one of the key online retailers in Brazil - the data that are 
+used here are from the kaggle challenge. You have to download the files 
+and extract them on the same folder with the rmd file (the folder should 
+be called _challenge_)
+
+
+# The readr package 
+
+```{r ,attr.source='.numberLines'}
+library(readr)
+```
+
+* So far we have seen a standard way of importing by using the ``read.csv`` function in this seminar we are going to examine the data using the read_csv function from the readr package. 
+
+
+# File prefix and Suffix
+
+```{r readr,attr.source='.numberLines'}
+# lets first get a list of files 
+olist_files <- list.files("challenge/")
+olist_files
+
+```
+
+```{r block2,attr.source='.numberLines'}
+#ok file names look pretty consistent 
+#lets be lazy and extract the names of 
+#the tables by removing the prefix (olist_) and
+#suffix _dataset.csv 
+
+prefix <- "olist_"
+suffix <- "_dataset.csv"
+
+olist_files <- gsub("olist_","",olist_files)
+olist_files <- gsub("_dataset.csv","",olist_files)
+olist_files
+
+```
+
+
+```{r prods, attr.source='.numberLines'}
+
+#ok lets parse the products related file
+products <- read_csv("challenge/olist_products_dataset.csv",show_col_types = FALSE)
+
+```
+
+* lets get it with the read.csv output 
+
+```{r prodreadotcsv,attr.source='.numberLines'}
+
+products2 <- read.csv("challenge/olist_products_dataset.csv")
+```
+
+
+* Let us compare it 
+
+```{r compare_readr_read.csv,attr.source='.numberLines'}
+str(products)
+str(products2)
+```
+
+
+*Explore the columns 
+
+```{r colnames,attr.source='.numberLines'}
+colnames(products)
+```
+
+
+```{r getheader,attr.source='.numberLines'}
+head(products)
+```
+
+* Check if product_id is a primary key
+
+```{r getindividualvalues, attr.source='.numberLines'}
+length(unique(products$product_id)) == nrow(products)
+```
+
+# Looping through - for 
+
+```{r loop,message=FALSE,warning=FALSE,attr.source='.numberLines'}
+# note we are allready in week_02 so the root folder now 
+# is /cloud/project/week_02/
+
+all_files <- list.files("challenge/")
+
+for (variable in all_files) {
+  this_filepath <- paste0("challenge/",variable)
+  this_file_contents <- readr::read_csv(this_filepath,show_col_types = FALSE)
+  
+  number_of_rows <- nrow(this_file_contents)
+  number_of_columns <- ncol(this_file_contents)
+  
+  print(paste0("The file: ",variable,
+              " has: ",
+              format(number_of_rows,big.mark = ","),
+              " rows and ",
+              number_of_columns," columns"))
+}
+
+
+```
+
+## Check if the first column of each file is a primary 
+
+
+```{r checkprimary,message=FALSE,warning=FALSE,attr.source='.numberLines'}
+
+for (variable in all_files) {
+  this_filepath <- paste0("challenge/",variable)
+  this_file_contents <- readr::read_csv(this_filepath,show_col_types = FALSE)
+  number_of_rows <- nrow(this_file_contents)
+  
+  print(paste0("Checking for: ",variable))
+  
+  print(colnames(this_file_contents)[1])
+  
+  print(paste0(" is ",nrow(unique(this_file_contents[,1]))==number_of_rows))
+}
+
+```
+
+
+
+# Load Files in an sqlite database 
+
+```{r loadsqlite,warning=FALSE,error=FALSE,message=FALSE,attr.source='.numberLines'}
+# Load the library
+# library(RSQLite)
+
+#setup the connection
+connection <- RSQLite::dbConnect(RSQLite::SQLite(),"olist_import.db")
+
+for (variable in all_files) {
+  this_filepath <- paste0("challenge/",variable)
+  this_file_contents <- readr::read_csv(this_filepath)
+
+  table_name <- gsub(".csv","",variable)
+  #Remove prefix and suffix 
+  table_name <- gsub("olist_","",table_name)
+  table_name <- gsub("_dataset","",table_name)
+  # table_name <- variable
+  
+  RSQLite::dbWriteTable(connection,table_name,this_file_contents,overwrite=TRUE)
+  
+}
+```
+
+* lets look at what we got 
+
+```{r listtables, attr.source='.numberLines'}
+# Get a list of tables from the database that we already 
+# created
+RSQLite::dbListTables(connection)
+
+```
+
+
+* Do not forget to disconnect 
+
+
+```{r disconnect, attr.source='.numberLines'}
+# Disconnect from the database using the connection variable that we setup 
+# before
+RSQLite::dbDisconnect(connection)
+
+```
+
+
+# Storing them natively
+
+## The RData format 
+
+* A very standard approach on saving data is to stop the import/export game and start saving in a native format 
+
+* R has its own native format that is called RData (.rda extension)
+
+```{r rdata, message=FALSE, warning=FALSE, attr.source='.numberLines'}
+all_files <- list.files("challenge/")
+for (variable in all_files) {
+  this_filepath <- paste0("challenge/",variable)
+  this_file_contents <- readr::read_csv(this_filepath)
+  table_name <- gsub(".csv","",variable)
+  save(this_file_contents,file = paste0("rdadata/",table_name,".rda"))
+}
+
+```
+
+* Load - you can load the individual file using 
+
+```{r loadrda, attr.source='.numberLines'}
+ load("rdadata/olist_customers_dataset.rda")
+```
+
+* Problem is that is saving an object with the same name when using load is not 
+handy
+
+## The RDS Data Format
+
+```{r rdsdata,message=FALSE,warning=FALSE, attr.source='.numberLines'}
+all_files <- list.files("challenge/")
+for (variable in all_files) {
+  this_filepath <- paste0("challenge/",variable)
+  this_file_contents <- readr::read_csv(this_filepath)
+  table_name <- gsub(".csv","",variable)
+  saveRDS(this_file_contents,file = paste0("rdadata/",table_name,".rds"))
+}
+
+```
+
+
+* load now should give also the name of the object in the memory 
+
+```{r rdsload, attr.source='.numberLines'}
+olist_customers_dataset <- readRDS("rdadata/olist_customers_dataset.rds")
+```
+
+* What is the difference in the RDA RDS file.

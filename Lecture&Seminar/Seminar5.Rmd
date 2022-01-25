@@ -1,0 +1,493 @@
+---
+title: 'Seminar 5 - Advanced SELECT and JOINS'
+author: "Dr Nikolaos Korfiatis"
+date: "Week 5"
+# output:
+#   beamer_presentation:
+#     theme: Boadilla
+#     colortheme: dolphin
+#     fonttheme: structurebold
+#     slide_level: 2
+# classoption: t
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+header-includes:
+    - \usepackage{hyperref}
+
+---
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,comment=NA,attr.source='.numberLines')
+
+rm(list=ls())
+library(readr)
+library(RSQLite)
+library(dplyr)
+```
+
+
+# Preliminaries 
+
+* We are going to work with the bibitor database we created in the previous 
+  seminar 
+
+
+
+```{r connect}
+
+my_db <- RSQLite::dbConnect(RSQLite::SQLite(),"bibitor.db")
+
+```
+
+# Advanced Select 
+
+## Aliasing 
+
+```{sql connection=my_db}
+-- Usefull to know, we can actually get the list of tables 
+-- from the metadata in the database using sql and no need 
+-- to actually go back to the terminal
+--SELECT type, name, rootpage 
+--FROM sqlite_master 
+--ORDER BY rootpage
+
+SELECT name,type
+FROM sqlite_master 
+WHERE type ='table'
+```
+* Let us remember the VendorInvoices table and how it looks 
+
+
+```{sql connection=my_db}
+SELECT * 
+FROM VendorInvoicesDec
+```
+
+### Calculating complex sums 
+
+>From table ‘VendorInvoicesDec ’ obtain the total freight costs by VendorNumber for
+transactions which the Total Dollars value of the
+transaction was greater than $100 and the quantity
+was less than or equal to 1000 units. 
+
+>Which VendorNumber corresponded to the largest Freight
+cost under these conditions?
+
+
+```{sql connection=my_db}
+SELECT VendorNumber,VendorName,SUM(Freight) AS total_freight_costs, SUM(Freight)/SUM(Quantity) as avg_cost_per_unit
+FROM VendorInvoicesDec
+WHERE Dollars > 100 AND Quantity <= 1000
+GROUP BY VendorNumber
+HAVING total_freight_costs >1000
+
+ORDER BY avg_cost_per_unit DESC
+--LIMIT 1
+```
+
+
+
+### Using aliases 
+
+```{sql connection=my_db}
+SELECT DISTINCT VendorNumber, VendorName 
+FROM VendorInvoicesDec
+```
+
+This will give us the same results as the query above. Notice that the column 
+names are not altered
+
+```{sql connection=my_db}
+SELECT DISTINCT p.VendorNumber, p.VendorName 
+FROM VendorInvoicesDec p
+```
+
+
+## LIKE 
+
+* The like statement is used to appropriate where conditions using pattern matching 
+* It is only applicable on non-numeric columns 
+* The general syntax of like is as follows: 
+
+```{sql, eval=FALSE}
+SELECT colname1,colname2,.... 
+FROM TABLE 
+WHERE colname1 LIKE '%endswith' OR 
+WHERE colname2 LIKE 'startswith%' OR 
+WHERE colname3 LIKE '%contains%' 
+```
+
+* Lets use it to select all suppliers with the name baccardi 
+
+```{sql connection=my_db}
+SELECT DISTINCT VendorName 
+FROM VendorInvoicesDec
+WHERE VendorName LIKE '%' 
+```
+
+* Notice that the LIKE statement is not case sensitive. That means that we 
+can conveniently use upper case or lower case characters depending on the 
+context.
+
+* Which vendors in this table have the USA in their name ? 
+
+
+```{sql connection=my_db}
+SELECT DISTINCT VendorName 
+FROM VendorInvoicesDec
+WHERE VendorName LIKE '%corp%'
+```
+
+
+## UNION 
+
+* So far we have seen how we can get information from separate queries in 
+  different result sets. 
+* Using the union operator we can combine them together in one 
+
+```{sql connection=my_db}
+SELECT COUNT(*) AS value, 'Total Invoices' AS metric
+FROM VendorInvoicesDec 
+UNION 
+
+SELECT SUM(Dollars) AS value, 'Total Ammount' AS metric 
+FROM VendorInvoicesDec
+
+UNION 
+
+SELECT MIN(Dollars) AS value, 'Minimum Ammount' AS metric 
+FROM VendorInvoicesDec
+
+
+UNION 
+
+SELECT SUM(Freight) AS value, 'Total weight' AS metric
+FROM VendorInvoicesDec
+```
+* Observe that the UNION is meaningful only if we specify the same 
+amount of columns in all queries and have the same name.
+
+* Run the same query with a different set of columns
+
+
+## Views and temporary result storage 
+
+* A VIEW is a virtual table. That means that the results are available 
+for select but not for insert/update/delete. 
+* The basic commands CREATE and DROP from SQL DDL apply to Views as well. 
+* Contrary to tables Views require 
+
+```{sql connection=my_db}
+DROP VIEW IF EXISTS BACCARDI
+```
+
+
+```{sql connection=my_db}
+CREATE VIEW IF NOT EXISTS BACCARDI AS 
+SELECT * 
+FROM VendorInvoicesDec 
+WHERE VendorName = "BACARDI USA INC"	
+```
+
+
+
+* We can add the IF EXISTS operator here to avoid getting an error message
+if we do it again 
+
+```{sql connection=my_db}
+SELECT * 
+FROM BACCARDI
+```
+
+* if a new record is added for baccardi, will the view table contain that ? 
+
+
+## Imposing relations using the WHERE statement 
+
+* Let us consider the two tables: ``BegInvDec`` and ``EndInvDec`` 
+* They contain the same number of columns however in the ``BegInvDec`` we have the ``startDate`` and in the ``EndInvDec`` we have the ``endDate`` 
+
+* Lets now select ``InventoryId`` from ``BeginvDec`` with the start date 
+and the ``endDate`` from the ``EndInvDec`` 
+
+```{sql connection=my_db}
+SELECT a.InventoryId, a.Brand, a.startDate, b.endDate, b.endDate - a.startDate AS total_days_inv
+FROM BegInvDec a, EndInvDec b 
+WHERE a.InventoryId = b.InventoryId
+ORDER BY total_days_inv DESC
+```
+
+* Can we get the vendor name and merge it so we can have a look ? 
+* Lets create a view for that (remove it if exists)
+
+```{sql connection=my_db}
+DROP VIEW IF EXISTS brand_vendor
+```
+
+```{sql connection=my_db}
+CREATE VIEW brand_vendor AS 
+SELECT DISTINCT Brand,VendorNumber,VendorName 
+FROM PurchasesDec
+```
+
+* Lets expand now (takes a bit of time)
+
+> Note that views can be treated as tables
+
+```{sql connection=my_db}
+SELECT a.InventoryId,a.Brand, a.startDate, b.endDate, b.endDate-a.startDate AS total_days_inv, c.VendorNumber, c.VendorName
+FROM BegInvDec a, EndInvDec b, brand_vendor c
+WHERE a.InventoryId = b.InventoryId AND a.Brand = c.Brand
+ORDER BY total_days_inv DESC
+LIMIT 5
+```
+
+
+
+# JOINS 
+
+## Inner Join 
+
+* The characteristic of the Inner Join is the matching of one column with a column on another table. 
+* In other words it works similar with a where statement 
+
+* Lets check the original record count
+
+```{sql connection=my_db}
+SELECT COUNT(*) as original_count
+FROM BegInvDec
+```
+
+
+```{sql connection=my_db}
+-- Count the inventory that went unsold at the end of the year  
+-- meaning that it was recorded on the beggining and still available 
+-- at the end of the year 
+-- requires the cross check between the two tables
+SELECT COUNT(*) AS total_unsold
+FROM EndInvDec A 
+INNER JOIN BegInvDec B 
+ON A.InventoryId = B.InventoryId
+
+```
+
+
+## Outer(Left) Join 
+
+* Outer join is commonly known by the direction of the join 
+* LEFT join includes all records from Table A and those from 
+Table B that can be matched with the join key of Table A
+* RIGHT join includes all records from Table B and those from Table A that can be matched with the join key of Table B 
+
+```{sql connection=my_db}
+
+SELECT a.InventoryId,a.Brand, a.startDate, b.endDate, b.endDate-a.startDate AS total_days_inv, c.VendorNumber, c.VendorName
+FROM BegInvDec a 
+LEFT JOIN EndInvDec b ON a.InventoryId = b.InventoryId 
+LEFT JOIN PurchasesDec c ON a.Brand = c.Brand
+ORDER BY total_days_inv DESC
+-- add a limit as the result set will be long 
+LIMIT 5 
+```
+
+* Similar cases can be done when considering the right join.
+
+
+## Cross Join 
+
+* Cross join is meaningfull if we want to get all possible 
+combinations of table A with table B. 
+
+* This is particularly usefull when we work with combined fields 
+such as date. 
+
+* Lets consider the following example: 
+
+  * year_tbl: a set of years from 2000 to 2020 
+  * month_tbl: the months within a year from January to February 
+* Lets write these tables in the database so we can play with 
+
+```{r addcrossjoin}
+years_tbl <- data.frame(years = c(2000:2021))
+months_tbl <- data.frame(months = month.name)
+
+# write them to the db so we execute an sql statement 
+dbWriteTable(my_db,"years_tbl",years_tbl,overwrite =TRUE)
+dbWriteTable(my_db,"months_tbl",months_tbl,overwrite =TRUE)
+```
+
+```{sql connection=my_db}
+SELECT * FROM years_tbl 
+CROSS JOIN months_tbl
+```
+
+
+
+# Dataset  
+
+* We continue with the second database on the bibitor case - the one 
+on the bibitor2 folder.
+
+
+## Sequential loading 
+
+* Lets consider the contents of the files in the second folder (bibitor2)
+* These contain the purchases per month
+* Let us load the first file (2016PurchasePricescsv.zip)
+
+## Unzipping
+
+* Copy the folder bibitor2 from Week 4 
+
+```{bash,eval=FALSE}
+# Tip we can use unzip "*.zip" to get 
+# the originals out 
+cd bibitor2 
+unzip "*.zip"
+```
+
+## Let sniff the data
+
+```{r readzip}
+purchase_prices <- read.csv("bibitor2/2016PurchasePricesDeca.csv")
+```
+* Ok it seems that the dataset has the same dimension accross all the files 
+
+## Merging the different files together
+
+* Lets create a dataframe here where we get them all together 
+
+```{r files, message=FALSE,warning=FALSE}
+
+# create an empty dataframe 
+purchase_prices <- data.frame()
+
+filesh <- list.files("bibitor2/",pattern = "csv")
+```
+
+```{r loopfor,message=FALSE,warning=FALSE}
+for(i in 1:length(filesh)){
+  print(paste0("reading for file: ",filesh[i]))
+  this_file <- readr::read_csv(paste0("bibitor2/",filesh[i]))
+  this_file$filename <- filesh[i]
+  purchase_prices <- rbind(purchase_prices,this_file)
+}
+```
+
+## Add year and quarter information 
+
+* Lets create a dataframe to join with the case we have here
+
+```{r getfilenames}
+
+yearquarter <- data.frame(filename =unique(purchase_prices$filename))
+```
+
+```{r extractyear}
+# first four digits is the year 
+yearquarter$year <- substr(yearquarter$filename,1,4)
+```
+
+* Quarter information is released as follows: 
+
+March : Q1 
+June  : Q2 
+Sep   : Q3 
+Dec   : Q4 
+
+
+```{r extractquarter}
+# easy to understand approach 
+# to a check for the string of the filename for every row  
+# not very efficient for very large dataframes though 
+
+#let us first create a new column to keep the quarterly 
+#information 
+yearquarter$quarter <- NA
+
+for(i in 1:nrow(yearquarter)){
+ # Set a variable that changes on every iteration 
+ quarterh <- NA
+ #check the value of the filename 
+ if(grepl("Mar",yearquarter$filename[i])){
+    quarterh <- "Q1"
+ }
+ else if(grepl("Jun",yearquarter$filename[i])){
+    quarterh <- "Q2"
+ }
+ else if(grepl("Sep",yearquarter$filename[i])){
+    quarterh <- "Q3"
+ }
+ else if(grepl("Dec",yearquarter$filename[i])){
+    quarterh <- "Q4"
+ }
+ # now lets set the variable to the corresponding cell position 
+ yearquarter$quarter[i] <- quarterh
+
+ 
+ print(quarterh)
+}
+
+```
+
+
+## Merge the file together 
+
+```{r mergejoin}
+library(dplyr)
+
+purchase_prices %>% 
+  left_join(yearquarter) -> purchase_prices
+
+# remove also the filename column since we got the information 
+# we wanted 
+
+purchase_prices$filename <- NULL 
+```
+
+
+## Advanced group by using dplyr
+
+```{r purprices}
+purchase_prices %>% 
+  mutate(profit = Price - PurchasePrice) %>% 
+  group_by(Brand,year,quarter) %>% 
+  summarise(avprofit = mean(profit)) 
+  
+```
+* Since we have the information for quarter and year lets  plot the price datapoints 
+* We are going to use both pipes and expression connectors (+) using ggplot
+
+```{r funplotting}
+#load the library as well
+
+library(ggplot2)
+
+
+purchase_prices %>% 
+  group_by(year,quarter) %>% 
+  summarise(avgprice = median(Price)) %>% 
+  ggplot(.,aes(x=paste0(year,"-",quarter),y=avgprice))+
+  geom_bar(stat="identity")+
+  ylab("Average Price")+
+  xlab("Year (Quarter)")+
+  # ggthemes::theme_wsj()+
+  theme(axis.text.x = element_text(angle = 90))+
+  ggtitle("Prices go up :)")
+
+
+```
+
+
+* Has the price of our stock increased accross these four years ? 
+
+# Recommended Datacamp courses. 
+
+* Datacamp course Joining data in sql 
+https://learn.datacamp.com/courses/joining-data-in-postgresql
+
+* Datacamp course on Joining data with dplyr 
+https://learn.datacamp.com/courses/joining-data-with-dplyr
